@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>字符二进制生成器（性能优化）</title>
+    <style>
+      :root {
+        --primary: #4a6bff;
+        --primary-dark: #3a5bef;
+        --bg-dark: #121212;
+        --bg-card: #1e1e1e;
+        --text-light: #f5f5f5;
+        --text-secondary: #aaaaaa;
+        --border-color: #333333;
+        --success: #4caf50;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: var(--bg-dark);
+        color: var(--text-light);
+        padding: 20px;
+        line-height: 1.6;
+        min-height: 100vh;
+        transition: all 0.3s ease;
+      }
+
+      .container {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      h2,
+      h3 {
+        margin-bottom: 20px;
+        color: var(--text-light);
+        font-weight: 500;
+        text-align: center;
+      }
+
+      h2 {
+        font-size: 28px;
+        margin-top: 10px;
+        position: relative;
+        padding-bottom: 10px;
+      }
+
+      h2:after {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 60px;
+        height: 3px;
+        background: var(--primary);
+        border-radius: 3px;
+      }
+
+      .card {
+        background: var(--bg-card);
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border: 1px solid var(--border-color);
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+
+      .control-group {
+        margin-bottom: 10px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--text-secondary);
+        font-size: 14px;
+      }
+
+      input[type="text"],
+      input[type="number"] {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-light);
+        font-size: 16px;
+        transition: all 0.3s;
+      }
+
+      input[type="color"] {
+        width: 100%;
+        height: 40px;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: rgba(255, 255, 255, 0.05);
+        cursor: pointer;
+      }
+
+      input:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 2px rgba(74, 107, 255, 0.2);
+      }
+
+      .button-group {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin: 20px 0;
+      }
+
+      button {
+        padding: 10px 20px;
+        border-radius: 6px;
+        border: none;
+        background: var(--primary);
+        color: white;
+        font-size: 16px;
+        cursor: pointer;
+        transition: all 0.2s;
+        min-width: 120px;
+      }
+
+      button:hover {
+        background: var(--primary-dark);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      .canvas-container {
+        display: flex;
+        justify-content: center;
+        margin: 20px 0;
+        overflow: auto;
+        max-width: 100%;
+      }
+
+      canvas {
+        margin-top: 10px;
+        background: #000;
+        image-rendering: pixelated;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        max-width: 100%;
+      }
+
+      pre {
+        background: rgba(0, 0, 0, 0.2);
+        padding: 15px;
+        border-radius: 8px;
+        overflow-x: auto;
+        max-height: 300px;
+        font-family: "Consolas", "Monaco", monospace;
+        font-size: 14px;
+        border: 1px solid var(--border-color);
+      }
+
+      .copy-success {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: var(--success);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 4px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.3s ease;
+      }
+
+      .copy-success.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @media (max-width: 768px) {
+        .controls {
+          grid-template-columns: 1fr;
+        }
+
+        .container {
+          padding: 10px;
+        }
+
+        button {
+          width: 100%;
+        }
+
+        .button-group {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>字符二进制生成器</h2>
+      <div class="card">
+        <div class="controls">
+          <div class="control-group">
+            <label for="charInput">字符（多个）</label>
+            <input
+              id="charInput"
+              type="text"
+              value="ABCDEF"
+              placeholder="输入字符"
+            />
+          </div>
+          <div class="control-group">
+            <label for="densityInput">密度（列宽）</label>
+            <input
+              id="densityInput"
+              type="number"
+              value="10"
+              min="1"
+              max="50"
+            />
+          </div>
+          <div class="control-group">
+            <label for="blockGapInput">区块间隔列数</label>
+            <input
+              id="blockGapInput"
+              type="number"
+              value="2"
+              min="0"
+              max="10"
+            />
+          </div>
+          <div class="control-group">
+            <label for="gapInput">点间隙（像素）</label>
+            <input id="gapInput" type="number" value="1" min="0" max="5" />
+          </div>
+          <div class="control-group">
+            <label for="colorInput">颜色</label>
+            <input id="colorInput" type="color" value="#ffffff" />
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button id="generateBtn">生成</button>
+          <button id="copyBtn" onclick="copyJSON()">复制 JSON</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>预览</h3>
+        <div class="canvas-container">
+          <canvas id="previewCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>生成的结构化 JSON</h3>
+        <pre id="jsonOutput">[]</pre>
+      </div>
+    </div>
+
+    <div id="copyNotification" class="copy-success">已复制到剪贴板！</div>
+
+    <script>
+      const MAX_CHARS = 10;
+      const DOT_SIZE = 6;
+      const MAX_CANVAS_PIXELS = 5000;
+
+      const generateBtn = document.getElementById("generateBtn");
+      let debounceTimer;
+
+      generateBtn.addEventListener("click", () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(generateBinary, 300);
+      });
+
+      function renderCharToBinary(char, density) {
+        const tempCanvas = document.createElement("canvas");
+        const tempCtx = tempCanvas.getContext("2d");
+        tempCanvas.width = 100;
+        tempCanvas.height = 100;
+        tempCtx.fillStyle = "#000";
+        tempCtx.fillRect(0, 0, 100, 100);
+        tempCtx.fillStyle = "#fff";
+        tempCtx.font = "bold 80px sans-serif";
+        tempCtx.textAlign = "center";
+        tempCtx.textBaseline = "middle";
+        tempCtx.fillText(char, 50, 50);
+
+        const scale = density / 100;
+        const height = Math.round(100 * scale);
+        const resizeCanvas = document.createElement("canvas");
+        resizeCanvas.width = density;
+        resizeCanvas.height = height;
+        const rCtx = resizeCanvas.getContext("2d");
+        rCtx.imageSmoothingEnabled = false;
+        rCtx.drawImage(tempCanvas, 0, 0, density, height);
+
+        const imgData = rCtx.getImageData(0, 0, density, height).data;
+        const binary = [];
+        for (let y = 0; y < height; y++) {
+          const row = [];
+          for (let x = 0; x < density; x++) {
+            const i = (y * density + x) * 4;
+            const avg = (imgData[i] + imgData[i + 1] + imgData[i + 2]) / 3;
+            row.push(avg < 128 ? 1 : 0);
+          }
+          binary.push(row);
+        }
+        return binary;
+      }
+
+      function combineBlocks(blocks, gap) {
+        const height = blocks[0].length;
+        const result = [];
+
+        for (let y = 0; y < height; y++) {
+          const row = [];
+          blocks.forEach((block, i) => {
+            row.push(...block[y]);
+            if (i < blocks.length - 1) {
+              for (let g = 0; g < gap; g++) row.push(0);
+            }
+          });
+          result.push(row);
+        }
+        return result;
+      }
+
+      function generateBinary() {
+        const chars = (document.getElementById("charInput").value || "A").slice(
+          0,
+          MAX_CHARS
+        );
+        const density =
+          parseInt(document.getElementById("densityInput").value) || 10;
+        const gap = parseInt(document.getElementById("gapInput").value) || 1;
+        const blockGap =
+          parseInt(document.getElementById("blockGapInput").value) || 2;
+        const color = document.getElementById("colorInput").value || "#ffffff";
+
+        const blocks = [];
+        for (let char of chars) {
+          blocks.push(renderCharToBinary(char, density));
+        }
+
+        const combined = combineBlocks(blocks, blockGap);
+        const canvas = document.getElementById("previewCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const widthPx = combined[0].length * (DOT_SIZE + gap);
+        const heightPx = combined.length * (DOT_SIZE + gap);
+
+        if (widthPx * heightPx > MAX_CANVAS_PIXELS * MAX_CANVAS_PIXELS) {
+          alert("渲染区域过大，请减少字符数量或密度！");
+          return;
+        }
+
+        canvas.width = widthPx;
+        canvas.height = heightPx;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        for (let y = 0; y < combined.length; y++) {
+          for (let x = 0; x < combined[0].length; x++) {
+            if (combined[y][x] === 1) {
+              ctx.fillStyle = color;
+              ctx.fillRect(
+                x * (DOT_SIZE + gap),
+                y * (DOT_SIZE + gap),
+                DOT_SIZE,
+                DOT_SIZE
+              );
+            }
+          }
+        }
+
+        const jsonData = {
+          density,
+          blockGap,
+          charWidth: density,
+          charHeight: blocks[0].length,
+          characters: chars.split(""),
+          blocks,
+          combined,
+        };
+
+        document.getElementById("jsonOutput").textContent = JSON.stringify(
+          jsonData,
+          null,
+          2
+        );
+      }
+
+      function copyJSON() {
+        const text = document.getElementById("jsonOutput").textContent;
+        navigator.clipboard.writeText(text).then(() => {
+          const notification = document.getElementById("copyNotification");
+          notification.classList.add("show");
+          setTimeout(() => {
+            notification.classList.remove("show");
+          }, 2000);
+        });
+      }
+
+      window.onload = generateBinary;
+    </script>
+  </body>
+</html>
