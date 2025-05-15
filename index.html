@@ -154,16 +154,18 @@
         margin: 20px 0;
         overflow: auto;
         max-width: 100%;
+        max-height: 500px; /* 添加最大高度限制 */
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 20px;
       }
 
       canvas {
-        margin-top: 10px;
         background: #000;
         image-rendering: pixelated;
-        border: 1px solid var(--border-color);
         border-radius: 4px;
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-        max-width: 100%;
+        max-width: none; /* 修改为none，允许画布超出容器 */
       }
 
       pre {
@@ -196,6 +198,21 @@
         transform: translateY(0);
       }
 
+      .color-controls {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid var(--border-color);
+      }
+
+      .color-controls h4 {
+        grid-column: 1 / -1;
+        margin-bottom: 10px;
+        color: var(--text-secondary);
+      }
+
       @media (max-width: 768px) {
         .controls {
           grid-template-columns: 1fr;
@@ -211,6 +228,10 @@
 
         .button-group {
           flex-direction: column;
+        }
+
+        .color-controls {
+          grid-template-columns: 1fr;
         }
       }
     </style>
@@ -254,8 +275,26 @@
             <input id="gapInput" type="number" value="1" min="0" max="5" />
           </div>
           <div class="control-group">
-            <label for="colorInput">颜色</label>
-            <input id="colorInput" type="color" value="#ffffff" />
+            <label for="charsPerRowInput">每行字符数</label>
+            <input
+              id="charsPerRowInput"
+              type="number"
+              value="5"
+              min="1"
+              max="10"
+            />
+          </div>
+        </div>
+
+        <div class="color-controls">
+          <h4>颜色设置</h4>
+          <div class="control-group">
+            <label for="dotColorInput">点颜色</label>
+            <input id="dotColorInput" type="color" value="#ffffff" />
+          </div>
+          <div class="control-group">
+            <label for="bgColorInput">背景颜色</label>
+            <input id="bgColorInput" type="color" value="#000000" />
           </div>
         </div>
 
@@ -281,7 +320,7 @@
     <div id="copyNotification" class="copy-success">已复制到剪贴板！</div>
 
     <script>
-      const MAX_CHARS = 10;
+      const MAX_CHARS = 50; // 将最大字符数从10增加到50
       const DOT_SIZE = 6;
       const MAX_CANVAS_PIXELS = 5000;
 
@@ -329,20 +368,50 @@
         return binary;
       }
 
-      function combineBlocks(blocks, gap) {
-        const height = blocks[0].length;
+      function combineBlocks(blocks, gap, charsPerRow) {
+        if (!blocks.length) return [];
+
+        const charHeight = blocks[0].length;
+        const charWidth = blocks[0][0].length;
         const result = [];
 
-        for (let y = 0; y < height; y++) {
-          const row = [];
-          blocks.forEach((block, i) => {
-            row.push(...block[y]);
-            if (i < blocks.length - 1) {
-              for (let g = 0; g < gap; g++) row.push(0);
+        // 计算每行需要多少行二进制数据
+        const rows = Math.ceil(blocks.length / charsPerRow);
+
+        for (let row = 0; row < rows; row++) {
+          // 获取当前行的字符块
+          const rowBlocks = blocks.slice(
+            row * charsPerRow,
+            (row + 1) * charsPerRow
+          );
+
+          // 创建当前行的二进制数据
+          const rowBinary = [];
+          for (let y = 0; y < charHeight; y++) {
+            const binaryRow = [];
+            rowBlocks.forEach((block, i) => {
+              binaryRow.push(...block[y]);
+              if (i < rowBlocks.length - 1) {
+                for (let g = 0; g < gap; g++) binaryRow.push(0);
+              }
+            });
+            rowBinary.push(binaryRow);
+          }
+
+          // 如果不是第一行，添加行间隔
+          if (row > 0) {
+            for (let g = 0; g < gap; g++) {
+              const gapRow = new Array(
+                (charWidth + gap) * rowBlocks.length - gap
+              ).fill(0);
+              result.push(gapRow);
             }
-          });
-          result.push(row);
+          }
+
+          // 添加当前行的二进制数据
+          result.push(...rowBinary);
         }
+
         return result;
       }
 
@@ -356,20 +425,31 @@
         const gap = parseInt(document.getElementById("gapInput").value) || 1;
         const blockGap =
           parseInt(document.getElementById("blockGapInput").value) || 2;
-        const color = document.getElementById("colorInput").value || "#ffffff";
+        const charsPerRow =
+          parseInt(document.getElementById("charsPerRowInput").value) || 5;
+        const dotColor =
+          document.getElementById("dotColorInput").value || "#ffffff";
+        const bgColor =
+          document.getElementById("bgColorInput").value || "#000000";
+
+        // 添加字符数量提示
+        if (chars.length > 20) {
+          console.log(`正在处理${chars.length}个字符，可能需要一些时间...`);
+        }
 
         const blocks = [];
         for (let char of chars) {
           blocks.push(renderCharToBinary(char, density));
         }
 
-        const combined = combineBlocks(blocks, blockGap);
+        const combined = combineBlocks(blocks, blockGap, charsPerRow);
         const canvas = document.getElementById("previewCanvas");
         const ctx = canvas.getContext("2d");
 
         const widthPx = combined[0].length * (DOT_SIZE + gap);
         const heightPx = combined.length * (DOT_SIZE + gap);
 
+        // 修改画布大小限制检查
         if (widthPx * heightPx > MAX_CANVAS_PIXELS * MAX_CANVAS_PIXELS) {
           alert("渲染区域过大，请减少字符数量或密度！");
           return;
@@ -377,31 +457,47 @@
 
         canvas.width = widthPx;
         canvas.height = heightPx;
-        ctx.fillStyle = "#000";
+        ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        for (let y = 0; y < combined.length; y++) {
-          for (let x = 0; x < combined[0].length; x++) {
-            if (combined[y][x] === 1) {
-              ctx.fillStyle = color;
-              ctx.fillRect(
-                x * (DOT_SIZE + gap),
-                y * (DOT_SIZE + gap),
-                DOT_SIZE,
-                DOT_SIZE
-              );
+        // 使用requestAnimationFrame优化渲染性能
+        function renderDots(startY = 0, chunkSize = 50) {
+          const endY = Math.min(startY + chunkSize, combined.length);
+
+          for (let y = startY; y < endY; y++) {
+            for (let x = 0; x < combined[0].length; x++) {
+              if (combined[y][x] === 1) {
+                ctx.fillStyle = dotColor;
+                ctx.fillRect(
+                  x * (DOT_SIZE + gap),
+                  y * (DOT_SIZE + gap),
+                  DOT_SIZE,
+                  DOT_SIZE
+                );
+              }
             }
           }
+
+          if (endY < combined.length) {
+            requestAnimationFrame(() => renderDots(endY, chunkSize));
+          }
         }
+
+        renderDots();
 
         const jsonData = {
           density,
           blockGap,
+          charsPerRow,
           charWidth: density,
           charHeight: blocks[0].length,
           characters: chars.split(""),
           blocks,
           combined,
+          colors: {
+            dot: dotColor,
+            background: bgColor,
+          },
         };
 
         document.getElementById("jsonOutput").textContent = JSON.stringify(
